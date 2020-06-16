@@ -1,17 +1,11 @@
-from operations import create
-from operations import modify
-from operations import delete
+from operations import create, delete
 
 
 def main():
-    print('Please type an option from the following:')
-    option = input('"create", "modify" or "delete"')
+    print("Please type an option from the following:")
+    option = input("'create', 'modify' or 'delete: '")
     if option == 'create':
         create()
-
-
-    elif option == 'modify':
-        modify()
 
 
     elif option == 'delete':

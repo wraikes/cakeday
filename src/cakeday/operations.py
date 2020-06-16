@@ -11,9 +11,6 @@ def create():
         file.write('\n')
 
     
-def modify():
-    pass
-
 def delete():
     name = str(input("Please type in the full name of person: "))
     
