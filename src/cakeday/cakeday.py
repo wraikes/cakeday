@@ -1,10 +1,11 @@
+#! /usr/bin/env python
 from operations import create, delete
 
 
 def main():
     print("Please type an option from the following:")
-    option = input("'create', 'modify' or 'delete: '")
-    if option == 'create':
+    option = str(input("create, modify or delete: "))
+    if option == "create":
         create()
 
 
