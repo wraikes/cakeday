@@ -1,6 +1,7 @@
 import sqlite3
 import re
 from contextlib import contextmanager
+from datetime import datetime, timedelta
 
 
 @contextmanager
@@ -191,4 +192,55 @@ def update():
     except Exception as e:
         print(f"Error updating record: {e}")
 
-	
+
+def get_upcoming_birthdays(days_ahead=30):
+    """Get upcoming birthdays within the specified number of days"""
+    today = datetime.now()
+    current_year = today.year
+    
+    upcoming = []
+    
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        c.execute('SELECT * FROM cakeday ORDER BY name')
+        records = c.fetchall()
+    
+    for record in records:
+        name, birthday, notification, adv_days = record
+        month, day = map(int, birthday.split('-'))
+        
+        # Calculate this year's birthday
+        try:
+            this_year_birthday = datetime(current_year, month, day)
+        except ValueError:
+            # Handle leap year case (Feb 29)
+            if month == 2 and day == 29:
+                this_year_birthday = datetime(current_year, 2, 28)
+            else:
+                continue
+        
+        # If this year's birthday has passed, use next year's
+        if this_year_birthday < today:
+            try:
+                next_year_birthday = datetime(current_year + 1, month, day)
+            except ValueError:
+                # Handle leap year case (Feb 29)
+                if month == 2 and day == 29:
+                    next_year_birthday = datetime(current_year + 1, 2, 28)
+                else:
+                    continue
+            birthday_date = next_year_birthday
+        else:
+            birthday_date = this_year_birthday
+        
+        # Calculate days until birthday
+        days_until = (birthday_date - today).days
+        
+        # Include if within the specified days ahead
+        if 0 <= days_until <= days_ahead:
+            upcoming.append((name, birthday, days_until, birthday_date))
+    
+    # Sort by days until birthday
+    upcoming.sort(key=lambda x: x[2])
+    
+    return upcoming

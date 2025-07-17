@@ -1,5 +1,5 @@
 #! /usr/bin/env python3
-from operations import create, delete, update, get_all, get_by_name
+from operations import create, delete, update, get_all, get_by_name, get_upcoming_birthdays
 
 
 def display_menu():
@@ -51,8 +51,33 @@ def search_birthday():
         print(f"No record found for {name}")
 
 
+def show_upcoming_birthdays():
+    """Display upcoming birthdays within 30 days"""
+    upcoming = get_upcoming_birthdays(30)
+    
+    if not upcoming:
+        print("No upcoming birthdays in the next 30 days.")
+        return
+    
+    print("\nUpcoming Birthdays (Next 30 Days):")
+    print("=" * 50)
+    
+    for name, birthday, days_until, birthday_date in upcoming:
+        if days_until == 0:
+            print(f"🎉 {name:<20} {birthday:<10} TODAY!")
+        elif days_until == 1:
+            print(f"🎂 {name:<20} {birthday:<10} Tomorrow ({days_until} day)")
+        else:
+            print(f"🎈 {name:<20} {birthday:<10} {days_until} days")
+    
+    print("=" * 50)
+
+
 def main():
     """Main application loop"""
+    # Show upcoming birthdays first
+    show_upcoming_birthdays()
+    
     while True:
         display_menu()
         

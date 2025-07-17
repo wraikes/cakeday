@@ -3,6 +3,7 @@ import sys
 import os
 import sqlite3
 import tempfile
+from datetime import datetime
 from unittest.mock import patch, MagicMock, mock_open
 
 # Add the src directory to the path to import operations
@@ -338,3 +339,165 @@ class TestUpdateFunction:
                 'UPDATE cakeday SET birthday = ?, notification = ?, adv_days = ? WHERE name = ?', 
                 ("01-15", "y", 14, "John Doe")
             )
+
+
+class TestUpcomingBirthdays:
+    """Test cases for get_upcoming_birthdays function"""
+    
+    @patch('operations.get_db_connection')
+    @patch('operations.datetime')
+    def test_get_upcoming_birthdays_empty_database(self, mock_datetime, mock_get_db_connection):
+        """Test get_upcoming_birthdays with empty database"""
+        # Mock current date as July 15, 2024
+        mock_datetime.now.return_value = datetime(2024, 7, 15)
+        mock_datetime.side_effect = lambda *args, **kwargs: datetime(*args, **kwargs)
+        
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = []
+        mock_conn.cursor.return_value = mock_cursor
+        mock_get_db_connection.return_value.__enter__.return_value = mock_conn
+        
+        result = operations.get_upcoming_birthdays(30)
+        
+        assert result == []
+        mock_cursor.execute.assert_called_once_with('SELECT * FROM cakeday ORDER BY name')
+    
+    @patch('operations.get_db_connection')
+    @patch('operations.datetime')
+    def test_get_upcoming_birthdays_with_records(self, mock_datetime, mock_get_db_connection):
+        """Test get_upcoming_birthdays with various birthday scenarios"""
+        # Mock current date as July 15, 2024
+        mock_datetime.now.return_value = datetime(2024, 7, 15)
+        mock_datetime.side_effect = lambda *args, **kwargs: datetime(*args, **kwargs)
+        
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = [
+            ("Alice", "07-15", "y", 14),  # Today
+            ("Bob", "07-16", "y", 7),     # Tomorrow 
+            ("Charlie", "07-25", "n", 0), # 10 days away
+            ("Dave", "08-15", "y", 14),   # 31 days away (outside window)
+            ("Eve", "06-15", "y", 14),    # Past birthday, next year
+        ]
+        mock_conn.cursor.return_value = mock_cursor
+        mock_get_db_connection.return_value.__enter__.return_value = mock_conn
+        
+        result = operations.get_upcoming_birthdays(30)
+        
+        # Should return 3 birthdays within 30 days, sorted by days until
+        assert len(result) == 3
+        
+        # Check ordering (by days until birthday)
+        assert result[0][0] == "Alice"   # 0 days (today)
+        assert result[0][2] == 0
+        assert result[1][0] == "Bob"     # 1 day
+        assert result[1][2] == 1
+        assert result[2][0] == "Charlie" # 10 days
+        assert result[2][2] == 10
+        
+        # Dave should not be included (31 days away)
+        names = [record[0] for record in result]
+        assert "Dave" not in names
+        
+        # Eve should not be included (past birthday)
+        assert "Eve" not in names
+    
+    @patch('operations.get_db_connection')
+    @patch('operations.datetime')
+    def test_get_upcoming_birthdays_leap_year_handling(self, mock_datetime, mock_get_db_connection):
+        """Test get_upcoming_birthdays handles leap year (Feb 29) correctly"""
+        # Mock current date as February 20, 2024 (leap year)
+        mock_datetime.now.return_value = datetime(2024, 2, 20)
+        mock_datetime.side_effect = lambda *args, **kwargs: datetime(*args, **kwargs)
+        
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = [
+            ("LeapYear", "02-29", "y", 14),  # Feb 29 - should work in leap year
+        ]
+        mock_conn.cursor.return_value = mock_cursor
+        mock_get_db_connection.return_value.__enter__.return_value = mock_conn
+        
+        result = operations.get_upcoming_birthdays(30)
+        
+        # Should return the leap year birthday
+        assert len(result) == 1
+        assert result[0][0] == "LeapYear"
+        assert result[0][2] == 9  # 9 days from Feb 20 to Feb 29
+    
+    @patch('operations.get_db_connection')
+    @patch('operations.datetime')
+    def test_get_upcoming_birthdays_leap_year_fallback(self, mock_datetime, mock_get_db_connection):
+        """Test get_upcoming_birthdays handles Feb 29 in non-leap year"""
+        # Mock current date as February 20, 2023 (non-leap year)
+        mock_datetime.now.return_value = datetime(2023, 2, 20)
+        mock_datetime.side_effect = lambda *args, **kwargs: datetime(*args, **kwargs)
+        
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = [
+            ("LeapYear", "02-29", "y", 14),  # Feb 29 - should fallback to Feb 28
+        ]
+        mock_conn.cursor.return_value = mock_cursor
+        mock_get_db_connection.return_value.__enter__.return_value = mock_conn
+        
+        result = operations.get_upcoming_birthdays(30)
+        
+        # Should return the birthday adjusted to Feb 28
+        assert len(result) == 1
+        assert result[0][0] == "LeapYear"
+        assert result[0][2] == 8  # 8 days from Feb 20 to Feb 28
+    
+    @patch('operations.get_db_connection')
+    @patch('operations.datetime')
+    def test_get_upcoming_birthdays_year_boundary(self, mock_datetime, mock_get_db_connection):
+        """Test get_upcoming_birthdays handles year boundary correctly"""
+        # Mock current date as December 20, 2024
+        mock_datetime.now.return_value = datetime(2024, 12, 20)
+        mock_datetime.side_effect = lambda *args, **kwargs: datetime(*args, **kwargs)
+        
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = [
+            ("NewYear", "01-05", "y", 14),  # Jan 5 next year
+            ("Christmas", "12-25", "y", 14), # Dec 25 this year
+        ]
+        mock_conn.cursor.return_value = mock_cursor
+        mock_get_db_connection.return_value.__enter__.return_value = mock_conn
+        
+        result = operations.get_upcoming_birthdays(30)
+        
+        # Should return both birthdays
+        assert len(result) == 2
+        
+        # Check ordering (by days until birthday)
+        assert result[0][0] == "Christmas"  # 5 days away
+        assert result[0][2] == 5
+        assert result[1][0] == "NewYear"    # 16 days away (across year boundary)
+        assert result[1][2] == 16
+    
+    @patch('operations.get_db_connection')
+    @patch('operations.datetime')
+    def test_get_upcoming_birthdays_custom_days_ahead(self, mock_datetime, mock_get_db_connection):
+        """Test get_upcoming_birthdays with custom days_ahead parameter"""
+        # Mock current date as July 15, 2024
+        mock_datetime.now.return_value = datetime(2024, 7, 15)
+        mock_datetime.side_effect = lambda *args, **kwargs: datetime(*args, **kwargs)
+        
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = [
+            ("Alice", "07-20", "y", 14),  # 5 days away
+            ("Bob", "07-25", "y", 7),     # 10 days away
+        ]
+        mock_conn.cursor.return_value = mock_cursor
+        mock_get_db_connection.return_value.__enter__.return_value = mock_conn
+        
+        # Test with 7 days ahead
+        result = operations.get_upcoming_birthdays(7)
+        
+        # Should only return Alice (5 days away)
+        assert len(result) == 1
+        assert result[0][0] == "Alice"
+        assert result[0][2] == 5
