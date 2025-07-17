@@ -1,57 +1,194 @@
 import sqlite3
 import re
+from contextlib import contextmanager
 
 
-#should use decorator to connect to database
-def run_query(op, *args):
+@contextmanager
+def get_db_connection():
+    """Context manager for database connections"""
     conn = sqlite3.connect("../database/cakeday.db")
-    c = conn.cursor()
+    try:
+        yield conn
+    finally:
+        conn.close()
 
-    if op == 'create':
-        c.execute('''
-        INSERT INTO cakeday values (?, ?, ?, ?);
-        ''', args)
-    else:
+
+def validate_birthday_format(birthday):
+    """Validate birthday format (mm-dd)"""
+    regex = r"^\d{2}-\d{2}$"
+    return re.match(regex, birthday) is not None
+
+
+def validate_notification_input(notification):
+    """Validate notification input (y/n)"""
+    return notification.lower() in ['y', 'yes', 'n', 'no']
+
+
+def get_all():
+    """Get all birthday records"""
+    with get_db_connection() as conn:
         c = conn.cursor()
-        c.execute('''
-        DELETE FROM cakeday WHERE name = (?);
-        ''', args) 
+        c.execute('SELECT * FROM cakeday ORDER BY name')
+        return c.fetchall()
 
-    conn.commit()
-    conn.close()
+
+def get_by_name(name):
+    """Get birthday record by name"""
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        c.execute('SELECT * FROM cakeday WHERE name = ?', (name,))
+        return c.fetchone()
 
 
 def create():
-    regex = "^\d{2}-\d{2}$"
-    name = str(input("Please type in the full name of person: "))
+    """Create a new birthday record"""
+    name = input("Please type in the full name of person: ").strip()
+    
+    if not name:
+        print("Name cannot be empty")
+        return
+    
+    # Check if name already exists
+    if get_by_name(name):
+        print(f"Record for {name} already exists. Use update to modify.")
+        return
     
     while True:
-        bday = str(input("Please record {}'s birthday as mm-dd: ".format(name)))
+        bday = input(f"Please record {name}'s birthday as mm-dd: ").strip()
         
-        if re.search(regex, bday) is not None:
+        if validate_birthday_format(bday):
             break
         else:
             print("Invalid input; please try again in format mm-dd: ")
 
-    notification = str(input("Would you like to receive advance notifications? y/n ")).lower()
+    while True:
+        notification = input("Would you like to receive advance notifications? y/n ").strip().lower()
+        if validate_notification_input(notification):
+            break
+        else:
+            print("Please enter 'y' for yes or 'n' for no")
     
     if notification in ('y', 'yes'):
         while True:
-            days_adv = input("How many days in advance would you like to receive notification? Please type an integer.")
+            days_adv = input("How many days in advance would you like to receive notification? Please type an integer: ")
             try: 
                 days_adv = int(days_adv)
-                break
-            except:
-                "Please type an integer:"
+                if days_adv >= 0:
+                    break
+                else:
+                    print("Please enter a non-negative integer")
+            except ValueError:
+                print("Please type an integer")
     else:
         days_adv = 0
 
-    run_query('create', name, bday, notification, days_adv)  
+    try:
+        with get_db_connection() as conn:
+            c = conn.cursor()
+            c.execute('INSERT INTO cakeday VALUES (?, ?, ?, ?)', (name, bday, notification, days_adv))
+            conn.commit()
+            print(f"Successfully added birthday for {name}")
+    except sqlite3.IntegrityError:
+        print(f"Error: Record for {name} already exists")
+    except Exception as e:
+        print(f"Error creating record: {e}")  
 
   
 def delete():
-    name = str(input("Please type in the full name of person: "))
+    """Delete a birthday record"""
+    name = input("Please type in the full name of person: ").strip()
     
-    run_query('delete', name)
+    if not name:
+        print("Name cannot be empty")
+        return
+    
+    # Check if record exists
+    if not get_by_name(name):
+        print(f"No record found for {name}")
+        return
+    
+    confirm = input(f"Are you sure you want to delete {name}'s birthday? y/n ").strip().lower()
+    if confirm not in ['y', 'yes']:
+        print("Delete cancelled")
+        return
+    
+    try:
+        with get_db_connection() as conn:
+            c = conn.cursor()
+            c.execute('DELETE FROM cakeday WHERE name = ?', (name,))
+            conn.commit()
+            print(f"Successfully deleted birthday for {name}")
+    except Exception as e:
+        print(f"Error deleting record: {e}")
+
+
+def update():
+    """Update an existing birthday record"""
+    name = input("Please type in the full name of person to update: ").strip()
+    
+    if not name:
+        print("Name cannot be empty")
+        return
+    
+    # Check if record exists
+    existing = get_by_name(name)
+    if not existing:
+        print(f"No record found for {name}")
+        return
+    
+    print(f"Current record for {name}:")
+    print(f"  Birthday: {existing[1]}")
+    print(f"  Notifications: {existing[2]}")
+    print(f"  Advance days: {existing[3]}")
+    
+    # Get new birthday
+    while True:
+        bday = input(f"Enter new birthday for {name} (mm-dd) or press Enter to keep '{existing[1]}': ").strip()
+        if not bday:
+            bday = existing[1]
+            break
+        elif validate_birthday_format(bday):
+            break
+        else:
+            print("Invalid input; please try again in format mm-dd: ")
+    
+    # Get new notification preference
+    while True:
+        notification = input(f"Receive advance notifications? y/n or press Enter to keep '{existing[2]}': ").strip().lower()
+        if not notification:
+            notification = existing[2]
+            break
+        elif validate_notification_input(notification):
+            break
+        else:
+            print("Please enter 'y' for yes or 'n' for no")
+    
+    # Get new advance days
+    if notification in ('y', 'yes'):
+        while True:
+            days_input = input(f"Days in advance for notification or press Enter to keep '{existing[3]}': ").strip()
+            if not days_input:
+                days_adv = existing[3]
+                break
+            try:
+                days_adv = int(days_input)
+                if days_adv >= 0:
+                    break
+                else:
+                    print("Please enter a non-negative integer")
+            except ValueError:
+                print("Please type an integer")
+    else:
+        days_adv = 0
+    
+    try:
+        with get_db_connection() as conn:
+            c = conn.cursor()
+            c.execute('UPDATE cakeday SET birthday = ?, notification = ?, adv_days = ? WHERE name = ?', 
+                     (bday, notification, days_adv, name))
+            conn.commit()
+            print(f"Successfully updated birthday for {name}")
+    except Exception as e:
+        print(f"Error updating record: {e}")
 
 	
